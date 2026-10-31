@@ -18,3 +18,15 @@ instance/*
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Local secrets, signing material, and database files
+.dev.vars*
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
