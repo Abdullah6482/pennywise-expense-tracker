@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ "Create account" if mode == "register" else "Welcome back" }}{% endblock %}
+{% block content %}
+  <section class="auth-card">
+    <a class="brand auth-brand" href="{{ url_for('login') }}">
+      <span class="brand-mark">p</span><span>Pennywise</span>
+    </a>
+    <div class="eyebrow">YOUR MONEY, IN FOCUS</div>
+    <h1>{{ "Make room for better habits." if mode == "register" else "Good to see you again." }}</h1>
+    <p class="auth-intro">
+      {{ "Create an account to start tracking your income and spending." if mode == "register" else "Sign in to pick up where you left off." }}
+    </p>
+    <form class="auth-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if mode == "register" %}
+        <label for="name">Your name</label>
+        <input id="name" name="name" type="text" maxlength="80" autocomplete="name" required>
+      {% endif %}
+      <label for="email">Email address</label>
+      <input id="email" name="email" type="email" maxlength="254" autocomplete="email" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" minlength="10" maxlength="128" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" required>
+      {% if mode == "register" %}<p class="field-hint">Use at least 10 characters.</p>{% endif %}
+      <button class="button button-primary auth-submit" type="submit">
+        {{ "Create my account" if mode == "register" else "Sign in" }} <span>→</span>
+      </button>
+    </form>
+    <p class="auth-switch">
+      {{ "Already have an account?" if mode == "register" else "New to Pennywise?" }}
+      <a href="{{ url_for('login' if mode == 'register' else 'register') }}">
+        {{ "Sign in" if mode == "register" else "Create an account" }}
+      </a>
+    </p>
+    <div class="privacy-note"><span>◇</span> Your financial data is private to your account.</div>
+  </section>
+{% endblock %}
