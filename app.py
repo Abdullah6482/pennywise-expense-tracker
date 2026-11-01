@@ -17,21 +17,63 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
+
+
+def deployment_config(environ=None):
+    environment = os.environ if environ is None else environ
+    app_environment = environment.get("APP_ENV", "development").strip().lower()
+    if app_environment not in ("development", "production"):
+        raise ValueError("APP_ENV must be 'development' or 'production'.")
+
+    secret_key = environment.get("SECRET_KEY", "")
+    if app_environment == "production":
+        if not secret_key.strip():
+            raise RuntimeError("SECRET_KEY must be configured in production.")
+        if len(secret_key.encode("utf-8")) < 32:
+            raise RuntimeError(
+                "SECRET_KEY must contain at least 32 bytes in production."
+            )
+    elif not secret_key:
+        secret_key = secrets.token_hex(32)
+
+    cookie_secure = environment.get("COOKIE_SECURE")
+    if cookie_secure not in (None, "0", "1"):
+        raise ValueError("COOKIE_SECURE must be '0' or '1'.")
+    if app_environment == "production" and cookie_secure == "0":
+        raise RuntimeError("Secure session cookies cannot be disabled in production.")
+
+    try:
+        trusted_proxy_hops = int(environment.get("TRUSTED_PROXY_HOPS", "0"))
+    except ValueError as error:
+        raise ValueError(
+            "TRUSTED_PROXY_HOPS must be a non-negative integer."
+        ) from error
+    if trusted_proxy_hops < 0:
+        raise ValueError("TRUSTED_PROXY_HOPS must be a non-negative integer.")
+
+    return {
+        "APP_ENV": app_environment,
+        "SECRET_KEY": secret_key,
+        "DATABASE": environment.get("DATABASE"),
+        "MAX_CONTENT_LENGTH": 16 * 1024,
+        "SESSION_COOKIE_HTTPONLY": True,
+        "SESSION_COOKIE_SAMESITE": "Lax",
+        "SESSION_COOKIE_SECURE": (
+            app_environment == "production" or cookie_secure == "1"
+        ),
+        "TRUSTED_PROXY_HOPS": trusted_proxy_hops,
+    }
 
 
 app = Flask(__name__)
 Path(app.instance_path).mkdir(parents=True, exist_ok=True)
-app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
-    DATABASE=os.environ.get(
-        "DATABASE", str(Path(app.instance_path) / "expense_tracker.sqlite3")
-    ),
-    MAX_CONTENT_LENGTH=16 * 1024,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
-)
+app.config.update(deployment_config())
+if app.config["DATABASE"] is None:
+    app.config["DATABASE"] = str(Path(app.instance_path) / "expense_tracker.sqlite3")
+if app.config["TRUSTED_PROXY_HOPS"]:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=app.config["TRUSTED_PROXY_HOPS"])
 
 EXPENSE_CATEGORIES = (
     "Food",
@@ -321,4 +363,9 @@ def delete_transaction(transaction_id):
 
 
 if __name__ == "__main__":
+    if app.config["APP_ENV"] == "production":
+        raise SystemExit(
+            "Do not use the Flask development server in production. "
+            "Start the app with a production WSGI server."
+        )
     app.run(debug=os.environ.get("FLASK_DEBUG") == "1")

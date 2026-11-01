@@ -40,7 +40,31 @@ python app.py
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000). On first run, Pennywise creates its SQLite database at `instance/expense_tracker.sqlite3`.
 
-To use another database location, set `DATABASE` before starting the app. If `SECRET_KEY` is not set, a temporary random key is generated at startup; sessions will expire when the process restarts. For a deployed instance, configure a persistent secret, use HTTPS, set `COOKIE_SECURE=1`, and run behind a production-ready WSGI server rather than Flask's development server.
+To use another database location, set `DATABASE` before starting the app. If `SECRET_KEY` is not set in development, a temporary random key is generated at startup; sessions will expire when the process restarts. Production requirements are described below.
+
+## Production deployment
+
+Pennywise refuses to start in production unless `SECRET_KEY` is set to a persistent value of at least 32 bytes. Generate it once (for example, with `python -c "import secrets; print(secrets.token_hex(32))"`) and save it in your hosting provider's secret manager; do not generate a new key at each restart.
+
+Set these environment variables in the hosting service:
+
+| Variable | Required value |
+|:--|:--|
+| `APP_ENV` | `production` |
+| `SECRET_KEY` | Persistent secret, at least 32 bytes |
+| `DATABASE` | Optional path to the SQLite database on a persistent disk |
+| `TRUSTED_PROXY_HOPS` | Optional number of trusted reverse-proxy hops; default `0` |
+
+Production always sets the session cookie's `Secure`, `HttpOnly`, and `SameSite=Lax` attributes. `COOKIE_SECURE=0` is rejected in production; `COOKIE_SECURE=1` is available only as an opt-in for local HTTPS development. Terminate TLS at your hosting platform's HTTPS ingress/load balancer and configure that ingress to redirect HTTP traffic to HTTPS. The app does not infer HTTPS from forwarded headers unless `TRUSTED_PROXY_HOPS` is explicitly set. Set it only when the trusted proxy overwrites `X-Forwarded-Proto`, and use the exact number of trusted hops; otherwise leave it at `0`.
+
+Install dependencies and run the WSGI app with Gunicorn on a Linux host:
+
+```sh
+python -m pip install -r requirements.txt
+gunicorn --bind "0.0.0.0:${PORT:-8000}" app:app
+```
+
+Do not run `python app.py` or Flask's built-in development server in production. Ensure the hosting platform's disk used by `DATABASE` persists across restarts and backups are configured. The app does not deploy itself or provision TLS, secrets, or persistent storage.
 
 ## Run the tests
 

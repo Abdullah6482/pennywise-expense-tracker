@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from app import app, init_db
+from app import app, deployment_config, init_db
 
 
 class ExpenseTrackerTests(unittest.TestCase):
@@ -28,6 +28,51 @@ class ExpenseTrackerTests(unittest.TestCase):
         )
         self.assertIsNotNone(match)
         return match.group(1).decode()
+
+    def test_production_requires_a_persistent_secret_key(self):
+        for secret_key in ("", "too-short"):
+            with self.subTest(secret_key=secret_key):
+                with self.assertRaisesRegex(RuntimeError, "SECRET_KEY"):
+                    deployment_config(
+                        {"APP_ENV": "production", "SECRET_KEY": secret_key}
+                    )
+
+    def test_production_enables_secure_cookies_and_configured_proxy_trust(self):
+        config = deployment_config(
+            {
+                "APP_ENV": "production",
+                "SECRET_KEY": "p" * 64,
+                "TRUSTED_PROXY_HOPS": "1",
+            }
+        )
+        self.assertTrue(config["SESSION_COOKIE_SECURE"])
+        self.assertEqual(config["TRUSTED_PROXY_HOPS"], 1)
+
+        original_secure_setting = app.config["SESSION_COOKIE_SECURE"]
+        self.addCleanup(
+            app.config.__setitem__,
+            "SESSION_COOKIE_SECURE",
+            original_secure_setting,
+        )
+        app.config["SESSION_COOKIE_SECURE"] = config["SESSION_COOKIE_SECURE"]
+        response = self.client.get("/register")
+        self.assertIn("; Secure", response.headers.get("Set-Cookie", ""))
+
+    def test_development_cookie_setting_and_proxy_configuration_are_explicit(self):
+        development = deployment_config({"APP_ENV": "development"})
+        self.assertFalse(development["SESSION_COOKIE_SECURE"])
+        with self.assertRaisesRegex(ValueError, "TRUSTED_PROXY_HOPS"):
+            deployment_config(
+                {"APP_ENV": "development", "TRUSTED_PROXY_HOPS": "-1"}
+            )
+        with self.assertRaisesRegex(RuntimeError, "cannot be disabled"):
+            deployment_config(
+                {
+                    "APP_ENV": "production",
+                    "SECRET_KEY": "p" * 64,
+                    "COOKIE_SECURE": "0",
+                }
+            )
 
     def register(self):
         response = self.client.get("/register")
